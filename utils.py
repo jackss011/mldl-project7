@@ -1,4 +1,5 @@
 import os
+import torchvision.transforms.functional as TF
 
 def download_file(url, filename):
   """Download the file at @url and save with @filename"""
@@ -36,3 +37,29 @@ def extract_tar(tar_path, dest_path):
     print('Extracting...')
     t.extractall(path=dest_path)
     print('Extracting Done!')
+
+
+def rotate_image(img, r):
+  """
+    Args:
+      img (Tensor): (..., H, W) Tensor image
+      r (int): rotate by 90*r degrees
+  """
+  if r == 0:
+    return img
+  if r == 1:
+    return TF.hflip(img.moveaxis(2, 1))
+  if r == 2:
+    return TF.hflip(TF.vflip(img))
+  if r == 3:
+    return TF.vflip(img.moveaxis(2, 1))
+
+  raise ValueError(f"Value of r in in image rotation is invalid: {r}")
+
+
+from matplotlib import pyplot as plt
+def show_image(t, *, ax=plt):
+  import numpy as np
+  img = t.numpy()
+  img = np.moveaxis(img, 0, 2)
+  ax.imshow(img)
