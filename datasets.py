@@ -82,8 +82,12 @@ class BaseDataset(Dataset):
 
 class RODDataset(BaseDataset):
   """ROD datasets. Made of couples of RGB and Depth pictures from the real world. Target domain"""
-  def __init__(self, root, download=False, image_size=None):
-      super().__init__('ROD', 'wrgbd_40k-split_sync.txt', root, download, image_size)
+  def __init__(self, root, *, train, download=False, image_size=None):
+      if not train:
+        raise ValueError("ROD dataset does not have a test. train should be ")
+
+      print("Loading ROD")
+      super().__init__(subfolder='ROD', annotations_filename='wrgbd_40k-split_sync.txt', root=root, download=download, image_size=image_size)
 
   def _map_image_path(self, img_path, is_rgb):
     if is_rgb:
@@ -95,20 +99,50 @@ class RODDataset(BaseDataset):
 
 class SynRODDataset(BaseDataset):
   """ROD datasets. Made of couples of RGB and Depth pictures from a 3D rendered. Source domain"""
-  def __init__(self, root, download=False, image_size=None, train=True):
+  def __init__(self, root, train, *, download=False, image_size=None):
       self.train = train
 
       annotations = None
       if train:
+        print("Loading synROD train")
         annotations = 'synARID_50k-split_sync_train1.txt'
       else:
+        print("Loading synROD test")
         annotations = 'synARID_50k-split_sync_test1.txt'
       
-      super().__init__('synROD', annotations, root, download, image_size)
+      super().__init__(subfolder='synROD', annotations_filename=annotations, root=root, download=download, image_size=image_size)
 
   def _map_image_path(self, img_path, is_rgb):
     if is_rgb:
       return img_path.replace('***', 'rgb')
     else:
       return img_path.replace('***', 'depth')
- 
+
+
+"""
+  ======= PRETEXT DATASETS =======
+  Simply rotate both images by a multiple of 90 degree and return the relative rotations
+"""
+from utils import rotate_image
+import numpy as np
+
+def pretext_transform(rgb_image, d_image):
+  """
+    Create pretext data.
+  """
+  rgb_r, d_r = np.random.randint(low=0, high=4, size=2)
+  z = (rgb_r - d_r) % 4 # Relative rotation as defined in the paper
+
+  return rotate_image(rgb_image, rgb_r), rotate_image(d_image, d_r), z
+
+
+class PretextSynRODDataset(SynRODDataset):
+  def __getitem__(self, idx):
+    rgb_image, d_image, _ = SynRODDataset.__getitem__(self, idx)
+    return pretext_transform(rgb_image, d_image)
+
+
+class PretextRODDataset(RODDataset):
+  def __getitem__(self, idx):
+    rgb_image, d_image, _ = RODDataset.__getitem__(self, idx)
+    return pretext_transform(rgb_image, d_image)
