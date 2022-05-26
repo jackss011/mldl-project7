@@ -58,8 +58,32 @@ def rotate_image(img, r):
 
 
 from matplotlib import pyplot as plt
-def show_image(t, *, ax=plt):
+def show_image(t, *, ax=plt, editor=False):
   import numpy as np
   img = t.numpy()
   img = np.moveaxis(img, 0, 2)
   ax.imshow(img)
+
+  if editor:
+    plt.show()
+
+
+class LoaderIterator:
+  def __init__(self, loader, *, skip_last=False, infinite=False) -> None:
+    self.loader = loader
+    self.skip_last = skip_last
+    self.infinite = infinite
+
+    self._iter = iter(self.loader)
+
+  def __next__(self):
+    n = next(self._iter, None)
+
+    if n is None or ( self.skip_last and (n[0].size(0) != self.loader.batch_size) ):
+      if self.infinite:
+        self._iter = iter(self.loader)
+        n = next(self._iter)
+      else:
+        raise StopIteration()
+    
+    return n
