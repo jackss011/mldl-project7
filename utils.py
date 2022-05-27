@@ -80,6 +80,12 @@ class LoaderIterator:
 
   def __iter__(self):
     return self
+
+  def __len__(self):
+    if not self.infinite:
+      return len(self.loader)
+    else:
+      return None
   
 
   def __next__(self):

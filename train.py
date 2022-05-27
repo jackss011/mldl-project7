@@ -6,7 +6,7 @@ from tqdm import tqdm
 
 from datasets import PretextSynRODDataset, PretextRODDataset, RODDataset, SynRODDataset
 from networks import FeatureExtractor, RecognitionClassifier, RotationClassifier
-from utils import show_image
+from utils import LoaderIterator, show_image
 
 
 
@@ -39,6 +39,8 @@ def main():
   ds_train_target_pt = PretextRODDataset("data", train=True, image_size=224)      # Target pretext
 
   ds_eval_source = SynRODDataset("data", train=False, image_size=224)             # Test if can classify source
+  ds_eval_source_pt = PretextSynRODDataset("data", train=False, image_size=224) 
+  ds_eval_target_pt = PretextRODDataset("data", train=True, image_size=224) 
 
 
   # ======= DATALOADERS ========
@@ -50,7 +52,8 @@ def main():
   dl_train_target_pt = dataloader_factory(ds_train_target_pt)
 
   dl_eval_source = dataloader_factory(ds_eval_source, num_workers=8)
-
+  dl_eval_source_pt = dataloader_factory(ds_eval_source_pt, num_workers=8)
+  dl_eval_target_pt = dataloader_factory(ds_eval_target_pt, num_workers=8)
 
   # ======= MODELS ========
   model_rgb = FeatureExtractor().to(device)
@@ -87,56 +90,36 @@ def main():
     """
     print("\n====> TRAINING")
 
-    iter_source = dl_train_source
-    iter_source_pt = iter(dl_train_source_pt)
-    iter_target_pt = iter(dl_train_target_pt)
+    def train_model(model, batch):
+      rgb, d, gt = batch
+      rgb, d, gt = rgb.to(device), d.to(device), gt.to(device)
+
+      f = combine_modes(rgb, d)
+      pred = model(f)
+      loss = criterion(pred, gt)
+      loss.backward()
+      del rgb, d, gt, f, pred, loss
+
+    iter_source = LoaderIterator(dl_train_source, skip_last=True)
+    iter_source_pt = LoaderIterator(dl_train_source_pt, skip_last=True)
+    iter_target_pt = LoaderIterator(dl_train_target_pt, infinite=True, skip_last=True)
 
     # ITERATIONS
-    for rgb, d, gt in tqdm(iter_source):
-      # skip last batch if it is too small
-      if(rgb.size(0) != BATCH_SIZE):
-        # print("Skip small SOURCE batch!!")
-        continue
-      
+    for source_batch in tqdm(iter_source):      
       # zero all gradients
       for o in opt_list:
         o.zero_grad()
 
       # +++ TASK +++
-      rgb, d, gt = rgb.to(device), d.to(device), gt.to(device)
-
-      f = combine_modes(rgb, d)
-      pred = model_task(f)
-      loss = criterion(pred, gt)
-      loss.backward()
-      del rgb, d, gt, f, pred, loss
+      train_model(model_task, source_batch)
 
       # +++ PRETEXT SOURCE +++
-      rgb, d, gt = next(iter_source_pt)
-      rgb, d, gt = rgb.to(device), d.to(device), gt.to(device)
-
-      f = combine_modes(rgb, d)
-      pred = model_pretext(f)
-      loss = criterion(pred, gt)
-      loss.backward()
-      del rgb, d, gt, f, pred, loss
+      source_batch_pt = next(iter_source_pt)
+      train_model(model_pretext, source_batch_pt)
 
       # +++ PRETEXT TARGET +++
-      rgb, d, gt = next(iter_target_pt, (None, None, None))
-
-      # If we run out of target data just restart the iteration
-      if rgb is None or rgb.size(0) != BATCH_SIZE:
-        # print("Restart iter on TARGET!!")
-        iter_target_pt = iter(dl_train_target_pt)
-        rgb, d, gt = next(iter_target_pt)
-
-      rgb, d, gt = rgb.to(device), d.to(device), gt.to(device)
-
-      f = combine_modes(rgb, d)
-      pred = model_pretext(f)
-      loss = criterion(pred, gt)
-      loss.backward()
-      del rgb, d, gt, f, pred, loss
+      target_batch_pt = next(iter_target_pt)
+      train_model(model_pretext, target_batch_pt)
 
       for o in opt_list:
         o.step()
@@ -149,25 +132,30 @@ def main():
     """
     print("\n====> EVALUATING")
 
-    loss = 0.0
-    correct = 0.0
-    total = 0
+    def eval_model(model, loader, desc="EVAL"):
+      print(f"\n--> {desc}")
 
-    # TEST SOURCE CLASSIFICATION PERFORMANCES
-    with torch.no_grad():
-      for rgb, d, gt in tqdm(dl_eval_source):
-        rgb, d, gt = rgb.to(device), d.to(device), gt.to(device)
+      loss = 0.0
+      correct = 0.0
+      total = 0
 
-        f = combine_modes(rgb, d)
-        pred = model_task(f)
+      # TEST SOURCE CLASSIFICATION PERFORMANCES
+      with torch.no_grad():
+        for rgb, d, gt in tqdm(loader):
+          rgb, d, gt = rgb.to(device), d.to(device), gt.to(device)
 
-        loss += criterion(pred, gt).item()
-        correct += (torch.argmax(pred, dim=1)==gt).sum().item()
-        total += pred.size(0)
+          f = combine_modes(rgb, d)
+          pred = model(f)
 
-    accuracy = correct / total
-    loss_per_batch = loss / len(dl_eval_source)
-    print(f"\nSOURCE EVAL: {loss_per_batch:.2f} | {accuracy*100:.1f}% ({correct}/{total})")
+          loss += criterion(pred, gt).item()
+          correct += (torch.argmax(pred, dim=1)==gt).sum().item()
+          total += pred.size(0)
+
+      accuracy = correct / total
+      loss_per_batch = loss / len(loader)
+      print(f"\nRESULTS: {loss_per_batch:.2f} | {accuracy*100:.1f}% ({int(correct)}/{total})\n")
+
+    eval_model(model_task, dl_eval_source, desc="SOURCE CLASSIFICATION")
 
 
   # =========== LOOP ==================
