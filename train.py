@@ -26,7 +26,7 @@ def main():
   device = None
   if torch.cuda.is_available():
     sel_dev = torch.cuda.current_device()
-    print(f"{torch.cuda.device_count()} cuda devices available. Using {torch.cuda.get_device_name(sel_dev)}")
+    print(f"+++ DEVICE INFO: {torch.cuda.device_count()} cuda devices available. Using {torch.cuda.get_device_name(sel_dev)}")
     device = 'cuda'
   else:
     print("No CUDA device available. Using CPU")
@@ -62,7 +62,7 @@ def main():
   model_task = RecognitionClassifier(512*2, 51).to(device)
   model_pretext = RotationClassifier(512*2, 4).to(device)
 
-  criterion = torch.nn.CrossEntropyLoss(reduction="sum").to(device)
+  criterion = torch.nn.CrossEntropyLoss().to(device)
 
 
   # ======= OPTIMIZERS ========
@@ -87,11 +87,12 @@ def main():
     """
     print("\n====> TRAINING")
 
-    iter_synrod_pt = iter(dl_train_source_pt)
-    iter_rod_pt = iter(dl_train_target_pt)
+    iter_source = dl_train_source
+    iter_source_pt = iter(dl_train_source_pt)
+    iter_target_pt = iter(dl_train_target_pt)
 
     # ITERATIONS
-    for rgb, d, gt in tqdm(dl_train_source):
+    for rgb, d, gt in tqdm(iter_source):
       # skip last batch if it is too small
       if(rgb.size(0) != BATCH_SIZE):
         # print("Skip small SOURCE batch!!")
@@ -111,7 +112,7 @@ def main():
       del rgb, d, gt, f, pred, loss
 
       # +++ PRETEXT SOURCE +++
-      rgb, d, gt = next(iter_synrod_pt)
+      rgb, d, gt = next(iter_source_pt)
       rgb, d, gt = rgb.to(device), d.to(device), gt.to(device)
 
       f = combine_modes(rgb, d)
@@ -121,13 +122,13 @@ def main():
       del rgb, d, gt, f, pred, loss
 
       # +++ PRETEXT TARGET +++
-      rgb, d, gt = next(iter_rod_pt, (None, None, None))
+      rgb, d, gt = next(iter_target_pt, (None, None, None))
 
       # If we run out of target data just restart the iteration
       if rgb is None or rgb.size(0) != BATCH_SIZE:
         # print("Restart iter on TARGET!!")
-        iter_rod_pt = iter(dl_train_target_pt)
-        rgb, d, gt = next(iter_rod_pt)
+        iter_target_pt = iter(dl_train_target_pt)
+        rgb, d, gt = next(iter_target_pt)
 
       rgb, d, gt = rgb.to(device), d.to(device), gt.to(device)
 
@@ -166,7 +167,7 @@ def main():
 
     accuracy = correct / total
     loss_per_batch = loss / len(dl_eval_source)
-    print(f"\nSOURCE EVAL: {loss_per_batch:.2f} | {accuracy:.2f}%")
+    print(f"\nSOURCE EVAL: {loss_per_batch:.2f} | {accuracy*100:.1f}% ({correct}/{total})")
 
 
   # =========== LOOP ==================

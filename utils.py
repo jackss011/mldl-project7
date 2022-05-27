@@ -1,4 +1,5 @@
 import os
+from tenacity import retry
 import torchvision.transforms.functional as TF
 
 def download_file(url, filename):
@@ -75,6 +76,11 @@ class LoaderIterator:
     self.infinite = infinite
 
     self._iter = iter(self.loader)
+
+
+  def __iter__(self):
+    return self
+  
 
   def __next__(self):
     n = next(self._iter, None)
