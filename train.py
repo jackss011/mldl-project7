@@ -37,8 +37,8 @@ def main():
   ds_train_target_pt = PretextRODDataset("data", train=True, image_size=224)      # Target pretext
 
   ds_eval_source = SynRODDataset("data", train=False, image_size=224)             # Test if can classify source
-  ds_eval_source_pt = PretextSynRODDataset("data", train=False, image_size=224) 
-  ds_eval_target_pt = PretextRODDataset("data", train=True, image_size=224) 
+  ds_eval_source_pt = PretextSynRODDataset("data", train=False, image_size=224)   # Test if can predict rotation of source images
+  ds_eval_target_pt = PretextRODDataset("data", train=True, image_size=224)       # Test if can predict rotation of target images
 
 
   # ======= DATALOADERS ========
@@ -85,14 +85,18 @@ def main():
 
   # ======= TRAINING ========
   def train_model(model, batch):
-      rgb, d, gt = batch
-      rgb, d, gt = rgb.to(device), d.to(device), gt.to(device)
+    """
+      Train either: model_task, model_pretext on a specific batch.
+      Also perform backpropagation of gradients.
+    """
+    rgb, d, gt = batch
+    rgb, d, gt = rgb.to(device), d.to(device), gt.to(device)
 
-      f = combine_modes(rgb, d)
-      pred = model(f)
-      loss = criterion(pred, gt)
-      loss.backward()
-      del rgb, d, gt, f, pred, loss
+    f = combine_modes(rgb, d)
+    pred = model(f)
+    loss = criterion(pred, gt)
+    loss.backward()
+    del rgb, d, gt, f, pred, loss
 
 
   def epoch_train():
@@ -107,57 +111,61 @@ def main():
 
     # ITERATIONS
     for source_batch in tqdm(iter_source):      
-      # zero all gradients
-      for o in opt_list:
+      for o in opt_list: # zero all gradients
         o.zero_grad()
 
-      # +++ TASK +++
+      # recognition on source
       train_model(model_task, source_batch)
 
-      # +++ PRETEXT SOURCE +++
+      # rotation on source
       source_batch_pt = next(iter_source_pt)
       train_model(model_pretext, source_batch_pt)
 
-      # +++ PRETEXT TARGET +++
+      # rotation on target
       target_batch_pt = next(iter_target_pt)
       train_model(model_pretext, target_batch_pt)
 
-      for o in opt_list:
+      for o in opt_list: #update weights
         o.step()
 
 
   # ========== EVALUATION ==============
   def eval_model(model, loader, desc="EVAL", limit_samples=None):
-      print(f"\n--> {desc}")
+    """
+      Validate either: model_task, model_pretext on the dataset contained in loader.
+      Report number of correct guesses and avg loss per batch.
+      If limit_samples is not None only take first n samples
+    """
+    print(f"\n--> {desc}")
 
-      loss = 0.0
-      correct = 0.0
-      total = 0
+    loss = 0.0
+    correct = 0.0
+    total = 0
 
-      num_batches = len(loader)
+    num_batches = len(loader)
 
-      if limit_samples:
-        limit_batches = math.floor(limit_samples/loader.batch_size)
-        num_batches = min(limit_batches, num_batches)
+    if limit_samples:
+      limit_batches = math.floor(limit_samples/loader.batch_size)
+      num_batches = min(limit_batches, num_batches)
 
-      # TEST SOURCE CLASSIFICATION PERFORMANCES
-      with torch.no_grad():
-        for i, (rgb, d, gt) in tqdm(enumerate(loader), total=num_batches):
-          if i >= num_batches: # terminate if we have more batches than we want
-            break
+    # TEST SOURCE CLASSIFICATION PERFORMANCES
+    with torch.no_grad():
+      for i, (rgb, d, gt) in tqdm(enumerate(loader), total=num_batches):
+        if i >= num_batches: # terminate if we have more batches than we want
+          break
 
-          rgb, d, gt = rgb.to(device), d.to(device), gt.to(device)
+        rgb, d, gt = rgb.to(device), d.to(device), gt.to(device)
 
-          f = combine_modes(rgb, d)
-          pred = model(f)
+        f = combine_modes(rgb, d)
+        pred = model(f)
 
-          loss += criterion(pred, gt).item()
-          correct += (torch.argmax(pred, dim=1)==gt).sum().item()
-          total += pred.size(0)
+        loss += criterion(pred, gt).item()
+        correct += (torch.argmax(pred, dim=1)==gt).sum().item()
+        total += pred.size(0)
 
-      accuracy = correct / total
-      loss_per_batch = loss / num_batches
-      print(f"\nRESULTS: {loss_per_batch:.2f} | {accuracy*100:.1f}% ({int(correct)}/{total})\n")
+    accuracy = correct / total
+    loss_per_batch = loss / num_batches
+    print(f"\nRESULTS: {loss_per_batch:.2f} | {accuracy*100:.1f}% ({int(correct)}/{total})\n")
 
 
   def epoch_eval():
@@ -179,7 +187,7 @@ def main():
     epoch_train()
     epoch_eval()
 
-  print("\n\n+++COMPLETED+++\n\n")
+  print("\n\n+++ COMPLETED! +++\n\n", "\n"*3)
 
 
 
