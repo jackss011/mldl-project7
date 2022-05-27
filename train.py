@@ -22,6 +22,7 @@ class HP:
   lr = 3e-4
   momentum = 0.9
   weight_decay = 0
+  pretext_weight = 1
 
 
 def run(hp: HP):
@@ -92,7 +93,7 @@ def run(hp: HP):
 
 
   # ======= TRAINING ========
-  def train_model(model, batch):
+  def train_model(model, batch, loss_weight=None):
     """
       Train either: model_task, model_pretext on a specific batch.
       Also perform backpropagation of gradients.
@@ -103,6 +104,10 @@ def run(hp: HP):
     f = combine_modes(rgb, d)
     pred = model(f)
     loss = criterion(pred, gt)
+
+    if loss_weight is not None:
+      loss *= loss_weight
+
     loss.backward()
     del rgb, d, gt, f, pred, loss
 
@@ -125,13 +130,14 @@ def run(hp: HP):
       # recognition on source
       train_model(model_task, source_batch)
 
-      # rotation on source
-      source_batch_pt = next(iter_source_pt)
-      train_model(model_pretext, source_batch_pt)
+      if hp.pretext_weight > 0:
+        # rotation on source
+        source_batch_pt = next(iter_source_pt)
+        train_model(model_pretext, source_batch_pt, hp.pretext_weight)
 
-      # rotation on target
-      target_batch_pt = next(iter_target_pt)
-      train_model(model_pretext, target_batch_pt)
+        # rotation on target
+        target_batch_pt = next(iter_target_pt)
+        train_model(model_pretext, target_batch_pt, hp.pretext_weight)
 
       for o in opt_list: #update weights
         o.step()
@@ -183,8 +189,12 @@ def run(hp: HP):
     print("\n\n====> EVALUATING")
 
     eval_model(model_task, dl_eval_source, desc="SOURCE: CLASSIFICATION")
-    eval_model(model_pretext, dl_eval_source_pt, desc="SOURCE: ROTATION")
-    eval_model(model_pretext, dl_eval_target_pt, desc="TARGET: ROTATION", limit_samples=8000)
+
+    if hp.pretext_weight > 0:
+      eval_model(model_pretext, dl_eval_source_pt, desc="SOURCE: ROTATION")
+      eval_model(model_pretext, dl_eval_target_pt, desc="TARGET: ROTATION", limit_samples=8000)
+    else:
+      print("Skipping evaluation for pretext task since pretext_weight is 0...")
 
 
   # ===================================
