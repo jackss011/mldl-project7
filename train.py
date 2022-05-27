@@ -2,10 +2,11 @@ import torch
 from torch.utils.data import DataLoader
 from torch.optim import SGD
 from tqdm import tqdm
+import math
 # import time, math
 
 from datasets import PretextSynRODDataset, PretextRODDataset, RODDataset, SynRODDataset
-from networks import FeatureExtractor, RecognitionClassifier, RotationClassifier
+from networks import FeatureExtractor, RecognitionClassifier, RotationClassifier, weight_init
 from utils import LoaderIterator, show_image
 
 
@@ -16,9 +17,6 @@ BATCH_SIZE = 64*2
 LR = 3e-4
 MOMENTUM = 0.9
 WEIGHT_DECAY = 0
-
-# CONFIG
-NUM_WORKERS = 2
 
 
 def main():
@@ -44,7 +42,7 @@ def main():
 
 
   # ======= DATALOADERS ========
-  def dataloader_factory(ds, num_workers=NUM_WORKERS):
+  def dataloader_factory(ds, num_workers=2):
     return DataLoader(ds, batch_size=BATCH_SIZE, num_workers=num_workers, shuffle=True, pin_memory=True)
 
   dl_train_source = dataloader_factory(ds_train_source)
@@ -55,6 +53,7 @@ def main():
   dl_eval_source_pt = dataloader_factory(ds_eval_source_pt, num_workers=8)
   dl_eval_target_pt = dataloader_factory(ds_eval_target_pt, num_workers=8)
 
+
   # ======= MODELS ========
   model_rgb = FeatureExtractor().to(device)
   model_d = FeatureExtractor().to(device)
@@ -64,6 +63,9 @@ def main():
 
   model_task = RecognitionClassifier(512*2, 51).to(device)
   model_pretext = RotationClassifier(512*2, 4).to(device)
+
+  model_task.apply(weight_init)
+  model_pretext.apply(weight_init)
 
   criterion = torch.nn.CrossEntropyLoss().to(device)
 
@@ -81,16 +83,8 @@ def main():
 
 
 
-  # ======= TRAINING LOOP ========
-
-  # ==================================
-  def epoch_train():
-    """
-      Train a single epoch
-    """
-    print("\n====> TRAINING")
-
-    def train_model(model, batch):
+  # ======= TRAINING ========
+  def train_model(model, batch):
       rgb, d, gt = batch
       rgb, d, gt = rgb.to(device), d.to(device), gt.to(device)
 
@@ -99,6 +93,13 @@ def main():
       loss = criterion(pred, gt)
       loss.backward()
       del rgb, d, gt, f, pred, loss
+
+
+  def epoch_train():
+    """
+      Train a single epoch
+    """
+    print("\n====> TRAINING")
 
     iter_source = LoaderIterator(dl_train_source, skip_last=True)
     iter_source_pt = LoaderIterator(dl_train_source_pt, skip_last=True)
@@ -125,23 +126,26 @@ def main():
         o.step()
 
 
-  # ==================================
-  def epoch_eval():
-    """
-      Evaluate at each epoch
-    """
-    print("\n====> EVALUATING")
-
-    def eval_model(model, loader, desc="EVAL"):
+  # ========== EVALUATION ==============
+  def eval_model(model, loader, desc="EVAL", limit_samples=None):
       print(f"\n--> {desc}")
 
       loss = 0.0
       correct = 0.0
       total = 0
 
+      num_batches = len(loader)
+
+      if limit_samples:
+        limit_batches = math.floor(limit_samples/loader.batch_size)
+        num_batches = min(limit_batches, num_batches)
+
       # TEST SOURCE CLASSIFICATION PERFORMANCES
       with torch.no_grad():
-        for rgb, d, gt in tqdm(loader):
+        for i, (rgb, d, gt) in tqdm(enumerate(loader), total=num_batches):
+          if i >= num_batches: # terminate if we have more batches than we want
+            break
+
           rgb, d, gt = rgb.to(device), d.to(device), gt.to(device)
 
           f = combine_modes(rgb, d)
@@ -152,13 +156,24 @@ def main():
           total += pred.size(0)
 
       accuracy = correct / total
-      loss_per_batch = loss / len(loader)
+      loss_per_batch = loss / num_batches
       print(f"\nRESULTS: {loss_per_batch:.2f} | {accuracy*100:.1f}% ({int(correct)}/{total})\n")
 
-    eval_model(model_task, dl_eval_source, desc="SOURCE CLASSIFICATION")
+
+  def epoch_eval():
+    """
+      Evaluate at each epoch
+    """
+    print("\n\n====> EVALUATING")
+
+    eval_model(model_task, dl_eval_source, desc="SOURCE: CLASSIFICATION")
+    eval_model(model_pretext, dl_eval_source_pt, desc="SOURCE: ROTATION")
+    eval_model(model_pretext, dl_eval_target_pt, desc="TARGET: ROTATION", limit_samples=8000)
 
 
+  # ===================================
   # =========== LOOP ==================
+  # ===================================
   for n in range(1, EPOCHS+1):
     print(f"\n\n\n{'='*12} EPOCH {n}/{EPOCHS} {'='*12}")
     epoch_train()
@@ -171,16 +186,3 @@ def main():
 # call main function
 if __name__ == '__main__':
     main()
-
-
-
-
-# def train_model(model, batch):
-#   rgb, d, gt = batch
-#   rgb, d, gt = rgb.to(device), d.to(device), gt.to(device)
-
-#   f = combine_modes(rgb, d)
-#   pred = model(f)
-#   loss = criterion(pred, gt)
-#   loss.backward()
-#   del rgb, d, gt, f, pred, loss

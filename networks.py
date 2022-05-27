@@ -4,6 +4,19 @@ import torchvision
 import torch.nn as nn
 
 
+def weight_init(m):
+  """
+    Used as argument in model.apply to initialize Linear and Conv2d layers weights.
+  """
+  if isinstance(m, nn.Linear):
+    nn.init.xavier_uniform_(m.weight)
+    nn.init.constant_(m.bias, 0.01)
+
+  elif isinstance(m, nn.Conv2d):
+    nn.init.xavier_uniform_(m.weight)
+    nn.init.zeros_(m.bias)
+
+
 class FeatureExtractor(nn.Module):
   """
     CNN used to extract features
