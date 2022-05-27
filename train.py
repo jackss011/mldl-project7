@@ -3,24 +3,32 @@ from torch.utils.data import DataLoader
 from torch.optim import SGD
 from tqdm import tqdm
 import math
-# import time, math
+from dataclasses import dataclass
 
 from datasets import PretextSynRODDataset, PretextRODDataset, RODDataset, SynRODDataset
 from networks import FeatureExtractor, RecognitionClassifier, RotationClassifier, weight_init
 from utils import LoaderIterator, show_image
 
 
+TRAIN_WORKERS = 2   # workers used for loading training data (for each dataset)
+EVAL_WORKERS = 4    # workers used for loading evaluation data (for each dataset)
+
 
 # HYPERPARAMS
-EPOCHS = 2
-BATCH_SIZE = 64*2
-LR = 3e-4
-MOMENTUM = 0.9
-WEIGHT_DECAY = 0
+@dataclass
+class HP:
+  epochs = 2
+  batch_size = 64*2
+  lr = 3e-4
+  momentum = 0.9
+  weight_decay = 0
 
 
-def main():
-  # SELECT DEVICE
+def run(hp: HP):
+  """
+    Performs a full run with the specified hyperparameters
+  """
+  # select device
   device = None
   if torch.cuda.is_available():
     sel_dev = torch.cuda.current_device()
@@ -42,16 +50,16 @@ def main():
 
 
   # ======= DATALOADERS ========
-  def dataloader_factory(ds, num_workers=2):
-    return DataLoader(ds, batch_size=BATCH_SIZE, num_workers=num_workers, shuffle=True, pin_memory=True)
+  def dataloader_factory(ds, num_workers=TRAIN_WORKERS):
+    return DataLoader(ds, batch_size=hp.batch_size, num_workers=num_workers, shuffle=True, pin_memory=True)
 
   dl_train_source = dataloader_factory(ds_train_source)
   dl_train_source_pt = dataloader_factory(ds_train_source_pt)
   dl_train_target_pt = dataloader_factory(ds_train_target_pt)
 
-  dl_eval_source = dataloader_factory(ds_eval_source, num_workers=8)
-  dl_eval_source_pt = dataloader_factory(ds_eval_source_pt, num_workers=8)
-  dl_eval_target_pt = dataloader_factory(ds_eval_target_pt, num_workers=8)
+  dl_eval_source = dataloader_factory(ds_eval_source, num_workers=EVAL_WORKERS)
+  dl_eval_source_pt = dataloader_factory(ds_eval_source_pt, num_workers=EVAL_WORKERS)
+  dl_eval_target_pt = dataloader_factory(ds_eval_target_pt, num_workers=EVAL_WORKERS)
 
 
   # ======= MODELS ========
@@ -72,7 +80,7 @@ def main():
 
   # ======= OPTIMIZERS ========
   def opt_factory(model):
-    return SGD(model.parameters(), lr=LR, momentum=MOMENTUM, weight_decay=WEIGHT_DECAY)
+    return SGD(model.parameters(), lr=hp.lr, momentum=hp.momentum, weight_decay=hp.weight_decay)
 
   opt_rgb = opt_factory(model_rgb)
   opt_d = opt_factory(model_d)
@@ -182,8 +190,8 @@ def main():
   # ===================================
   # =========== LOOP ==================
   # ===================================
-  for n in range(1, EPOCHS+1):
-    print(f"\n\n\n{'='*12} EPOCH {n}/{EPOCHS} {'='*12}")
+  for e in range(1, hp.epochs+1):
+    print(f"\n\n\n{'='*12} EPOCH {e}/{hp.epochs} {'='*12}")
     epoch_train()
     epoch_eval()
 
@@ -191,6 +199,6 @@ def main():
 
 
 
-# call main function
+# run with basic hp for now
 if __name__ == '__main__':
-    main()
+    run(HP())
