@@ -1,5 +1,5 @@
 /data
-/snapshots
+/snapshots*
 .DS_Store
 .code
 docs

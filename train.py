@@ -32,7 +32,7 @@ class HP:
     return "__".join(prs)
 
 
-def run(hp: HP, resume=False):
+def run(hp: HP, resume=False, save_snapshots=True):
   """
     Performs a full run with the specified hyperparameters
   """
@@ -237,34 +237,40 @@ def run(hp: HP, resume=False):
   # =========== LOOP ==================
   # ===================================
   start_epoch = 1
-  loaded = False
 
+  # models at each epoch are saved in "snapshots/{hyperparamers}" as "model_{epoch}"
+  # where `hyperparamers` is a string that represents hps like: "epochs_2__batch_size_128__lr_0.0003__momentum_0.9__weight_decay_0__pretext_weight_1"
+  # and {epoch} is the epoch at which the model was trained
   snapshot_folder = os.path.join('snapshots', hp.to_filename())
   os.makedirs(snapshot_folder, exist_ok=True)
 
   if resume:
     import re
-    epochs = [f for f in os.listdir(snapshot_folder) if re.match(r"^model_(\d+)\.tar$", f)]
-    epochs = [int(f.replace('model_', '').replace('.tar', '')) for f in epochs]
+    # all model files for current hp. filenames are like `model_{epoch}.tar`, so take
+    epochs_files = [f for f in os.listdir(snapshot_folder) if re.match(r"^model_(\d+)\.tar$", f)]
+    # extract numerical epoch values from each epoch filename. Used to find most recent epoch
+    epochs = [int(f.replace('model_', '').replace('.tar', '')) for f in epochs_files]
     
     if len(epochs) > 0:
       recent_epoch = max(epochs)
       recent_model = f"model_{recent_epoch}.tar"
+      start_epoch = recent_epoch+1
 
-      start_epoch = recent_epoch
+      print(f"\n\n\n{'='*12} RESUME EPOCH {recent_epoch}/{hp.epochs} {'='*12}")
+
       load_networks(os.path.join(snapshot_folder, recent_model))
-      loaded = True
+      print(f"--> Model loaded from file! Running evaluation for resumed model...")
+
+      epoch_eval()
   
 
   for e in range(start_epoch, hp.epochs+1):
     print(f"\n\n\n{'='*12} EPOCH {e}/{hp.epochs} {'='*12}")
 
-    if not loaded:
-      epoch_train()
+    epoch_train()
+
+    if save_snapshots:
       save_networks(os.path.join(snapshot_folder, f"model_{e}.tar"))
-    else:
-      print(f"--> Model loaded from file! ({e} epoch)")
-      loaded = False
 
     epoch_eval()
 
