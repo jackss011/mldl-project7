@@ -83,6 +83,8 @@ def run(hp: HP, resume=False, save_snapshots=True):
   model_task.apply(weight_init)
   model_pretext.apply(weight_init)
 
+  model_list = [model_rgb, model_d, model_task, model_pretext]
+
   criterion = torch.nn.CrossEntropyLoss().to(device)
 
 
@@ -154,6 +156,9 @@ def run(hp: HP, resume=False, save_snapshots=True):
     """
     print("\n====> TRAINING")
 
+    for m in model_list:
+      m.train()
+
     iter_source = LoaderIterator(dl_train_source, skip_last=True)
     iter_source_pt = LoaderIterator(dl_train_source_pt, skip_last=True)
     iter_target_pt = LoaderIterator(dl_train_target_pt, infinite=True, skip_last=True)
@@ -223,6 +228,9 @@ def run(hp: HP, resume=False, save_snapshots=True):
       Evaluate at each epoch
     """
     print("\n\n====> EVALUATING")
+
+    for m in model_list:
+      m.eval()
 
     eval_model(model_task, dl_eval_source, desc="SOURCE: CLASSIFICATION")
 
