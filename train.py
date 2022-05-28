@@ -1,9 +1,12 @@
+import dataclasses
+from typing_extensions import dataclass_transform
 import torch
 from torch.utils.data import DataLoader
 from torch.optim import SGD
 from tqdm import tqdm
 import math
 from dataclasses import dataclass
+import os
 
 from datasets import PretextSynRODDataset, PretextRODDataset, RODDataset, SynRODDataset
 from networks import FeatureExtractor, RecognitionClassifier, RotationClassifier, weight_init
@@ -17,15 +20,19 @@ EVAL_WORKERS = 4    # workers used for loading evaluation data (for each dataset
 # HYPERPARAMS
 @dataclass
 class HP:
-  epochs = 2
-  batch_size = 64*2
-  lr = 3e-4
-  momentum = 0.9
-  weight_decay = 0
-  pretext_weight = 1
+  epochs: int = 2
+  batch_size: int = 64*2
+  lr: float = 3e-4
+  momentum: float = 0.9
+  weight_decay: float = 0
+  pretext_weight: float = 1
+
+  def to_filename(self):
+    prs = [ f"{k}_{v}" for k, v in dataclasses.asdict(self).items() ]
+    return "__".join(prs)
 
 
-def run(hp: HP):
+def run(hp: HP, resume=False):
   """
     Performs a full run with the specified hyperparameters
   """
@@ -89,6 +96,35 @@ def run(hp: HP):
   opt_pretext = opt_factory(model_pretext)
 
   opt_list = [opt_rgb, opt_d, opt_task, opt_pretext]
+
+
+  # ======= SAVING ========
+  def save_networks(path):
+    torch.save({
+      'model_rgb': model_rgb.state_dict(),
+      'model_d': model_d.state_dict(),
+      'model_task': model_task.state_dict(),
+      'model_pretext': model_pretext.state_dict(),
+
+      'opt_rgb': opt_rgb.state_dict(),
+      'opt_d': opt_d.state_dict(),
+      'opt_task': opt_task.state_dict(),
+      'opt_pretext': opt_pretext.state_dict(),
+    }, path)
+
+  def load_networks(path):
+    l = torch.load(path)
+    model_rgb.load_state_dict(l['model_rgb'])
+    model_d.load_state_dict(l['model_d'])
+    model_task.load_state_dict(l['model_task'])
+    model_pretext.load_state_dict(l['model_pretext'])
+
+    opt_rgb.load_state_dict(l['opt_rgb'])
+    opt_d.load_state_dict(l['opt_d'])
+    opt_task.load_state_dict(l['opt_task'])
+    opt_pretext.load_state_dict(l['opt_pretext'])
+
+
 
 
 
@@ -200,9 +236,36 @@ def run(hp: HP):
   # ===================================
   # =========== LOOP ==================
   # ===================================
-  for e in range(1, hp.epochs+1):
+  start_epoch = 1
+  loaded = False
+
+  snapshot_folder = os.path.join('snapshots', hp.to_filename())
+  os.makedirs(snapshot_folder, exist_ok=True)
+
+  if resume:
+    import re
+    epochs = [f for f in os.listdir(snapshot_folder) if re.match(r"^model_(\d+)\.tar$", f)]
+    epochs = [int(f.replace('model_', '').replace('.tar', '')) for f in epochs]
+    
+    if len(epochs) > 0:
+      recent_epoch = max(epochs)
+      recent_model = f"model_{recent_epoch}.tar"
+
+      start_epoch = recent_epoch
+      load_networks(os.path.join(snapshot_folder, recent_model))
+      loaded = True
+  
+
+  for e in range(start_epoch, hp.epochs+1):
     print(f"\n\n\n{'='*12} EPOCH {e}/{hp.epochs} {'='*12}")
-    epoch_train()
+
+    if not loaded:
+      epoch_train()
+      save_networks(os.path.join(snapshot_folder, f"model_{e}.tar"))
+    else:
+      print(f"--> Model loaded from file! ({e} epoch)")
+      loaded = False
+
     epoch_eval()
 
   print("\n\n+++ COMPLETED! +++\n\n", "\n"*3)
@@ -211,4 +274,5 @@ def run(hp: HP):
 
 # run with basic hp for now
 if __name__ == '__main__':
-    run(HP())
+  hp = HP()
+  run(hp, resume=True)
