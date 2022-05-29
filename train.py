@@ -1,16 +1,18 @@
-import dataclasses
-from typing_extensions import dataclass_transform
 import torch
 from torch.utils.data import DataLoader
 from torch.optim import SGD
 from tqdm import tqdm
-import math
-from dataclasses import dataclass
 import os
+import math
+from datetime import datetime
+import dataclasses
+from dataclasses import dataclass
 
 from datasets import PretextSynRODDataset, PretextRODDataset, RODDataset, SynRODDataset
 from networks import FeatureExtractor, RecognitionClassifier, RotationClassifier, weight_init
 from utils import LoaderIterator, show_image
+
+from torch.utils.tensorboard import SummaryWriter
 
 
 TRAIN_WORKERS = 2   # workers used for loading training data (for each dataset)
@@ -45,6 +47,12 @@ def run(hp: HP, resume=False, save_snapshots=True):
   else:
     print("No CUDA device available. Using CPU")
     device = 'cpu'
+
+
+  # ======= TENSORBOARD WRITER ========
+  now = datetime.now()
+  summary = SummaryWriter(log_dir=f"runs/{hp.to_filename()}/{now.strftime('%b%d_%H-%M-%S')}")
+  # summary.add_hparams(dataclasses.asdict(hp), {})
 
 
   # ======= DATASETS ========
@@ -185,7 +193,7 @@ def run(hp: HP, resume=False, save_snapshots=True):
 
 
   # ========== EVALUATION ==============
-  def eval_model(model, loader, desc="EVAL", limit_samples=None):
+  def eval_model(model, loader, desc="EVAL", limit_samples=None, tag="none", step=0):
     """
       Validate either: model_task, model_pretext on the dataset contained in loader.
       Report number of correct guesses and avg loss per batch.
@@ -218,12 +226,14 @@ def run(hp: HP, resume=False, save_snapshots=True):
         correct += (torch.argmax(pred, dim=1)==gt).sum().item()
         total += pred.size(0)
 
-    accuracy = correct / total
-    loss_per_batch = loss / num_batches
-    print(f"\nRESULTS: {loss_per_batch:.2f} | {accuracy*100:.1f}% ({int(correct)}/{total})\n")
+    accuracy = (correct / total)*100
+
+    print(f"\nRESULTS: {loss:.2f} | {accuracy:.1f}% ({int(correct)}/{total})\n")
+    summary.add_scalar(f"accuracy/{tag}", accuracy, step)
+    summary.add_scalar(f"loss/{tag}", loss, step)
 
 
-  def epoch_eval():
+  def epoch_eval(n):
     """
       Evaluate at each epoch
     """
@@ -232,13 +242,13 @@ def run(hp: HP, resume=False, save_snapshots=True):
     for m in model_list:
       m.eval()
 
-    eval_model(model_task, dl_eval_source, desc="SOURCE: CLASSIFICATION")
+    eval_model(model_task, dl_eval_source, step=n, desc="SOURCE: CLASSIFICATION", tag="source_recog")
 
     if hp.pretext_weight > 0:
-      eval_model(model_pretext, dl_eval_source_pt, desc="SOURCE: ROTATION")
-      eval_model(model_pretext, dl_eval_target_pt, desc="TARGET: ROTATION", limit_samples=8000)
+      eval_model(model_pretext, dl_eval_source_pt, step=n, desc="SOURCE: ROTATION", tag="source_rot")
+      eval_model(model_pretext, dl_eval_target_pt, step=n, desc="TARGET: ROTATION", tag="target_rot", limit_samples=8000, )
     else:
-      print("Skipping evaluation for pretext task since pretext_weight is 0...")
+      print("Skipping evaluation for pretext task since pretext_weight is 0...\n")
 
 
   # ===================================
@@ -269,7 +279,7 @@ def run(hp: HP, resume=False, save_snapshots=True):
       load_networks(os.path.join(snapshot_folder, recent_model))
       print(f"--> Model loaded from file! Running evaluation for resumed model...")
 
-      epoch_eval()
+      epoch_eval(n=recent_epoch)
   
 
   for e in range(start_epoch, hp.epochs+1):
@@ -280,7 +290,7 @@ def run(hp: HP, resume=False, save_snapshots=True):
     if save_snapshots:
       save_networks(os.path.join(snapshot_folder, f"model_{e}.tar"))
 
-    epoch_eval()
+    epoch_eval(n=e)
 
   print("\n\n+++ COMPLETED! +++\n\n", "\n"*3)
 
