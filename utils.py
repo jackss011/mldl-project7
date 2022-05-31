@@ -1,6 +1,24 @@
 import os
 from tenacity import retry
 import torchvision.transforms.functional as TF
+import torch
+
+
+def select_device():
+  """
+    Select a device and print info. Return first gpu if possible.
+  """
+  device = None
+  if torch.cuda.is_available():
+    sel_dev = torch.cuda.current_device()
+    print(f"+++ DEVICE INFO: {torch.cuda.device_count()} cuda devices available. Using {torch.cuda.get_device_name(sel_dev)}")
+    device = 'cuda'
+  else:
+    print("No CUDA device available. Using CPU")
+    device = 'cpu'
+
+  return device
+
 
 def download_file(url, filename):
   """Download the file at @url and save with @filename"""
@@ -99,3 +117,17 @@ class LoaderIterator:
         raise StopIteration()
     
     return n
+
+
+def get_epochs_in_model_folder(dir):
+  """
+    models are saved in a file name model_{epoch}.tar, this functions all epochs in a folder.
+    return example (1, 2, 3) for a folder with files model_1.tar, model_2.tar, model_3.tar
+  """
+  import re
+  # all model files for current hp. filenames are like `model_{epoch}.tar`, so take
+  epochs_files = [f for f in os.listdir(dir) if re.match(r"^model_(\d+)\.tar$", f)]
+  # extract numerical epoch values from each epoch filename. Used to find most recent epoch
+  epochs = [int(f.replace('model_', '').replace('.tar', '')) for f in epochs_files]
+  
+  return tuple(epochs)

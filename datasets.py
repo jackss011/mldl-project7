@@ -83,8 +83,8 @@ class BaseDataset(Dataset):
 class RODDataset(BaseDataset):
   """ROD datasets. Made of couples of RGB and Depth pictures from the real world. Target domain"""
   def __init__(self, root, *, train, download=False, image_size=None):
-      if not train:
-        raise ValueError("ROD dataset does not have a test. train should be ")
+      # if not train:
+      #   raise ValueError("ROD dataset does not have a test. train should be ")
 
       # print("Loading ROD")
       super().__init__(subfolder='ROD', annotations_filename='wrgbd_40k-split_sync.txt', root=root, download=download, image_size=image_size)

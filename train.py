@@ -10,7 +10,7 @@ from dataclasses import dataclass
 
 from datasets import PretextSynRODDataset, PretextRODDataset, RODDataset, SynRODDataset
 from networks import FeatureExtractor, RecognitionClassifier, RotationClassifier, weight_init
-from utils import LoaderIterator, show_image
+from utils import LoaderIterator, get_epochs_in_model_folder, select_device, show_image
 
 from torch.utils.tensorboard import SummaryWriter
 
@@ -38,16 +38,7 @@ def run(hp: HP, resume=False, save_snapshots=True):
   """
     Performs a full run with the specified hyperparameters
   """
-  # select device
-  device = None
-  if torch.cuda.is_available():
-    sel_dev = torch.cuda.current_device()
-    print(f"+++ DEVICE INFO: {torch.cuda.device_count()} cuda devices available. Using {torch.cuda.get_device_name(sel_dev)}")
-    device = 'cuda'
-  else:
-    print("No CUDA device available. Using CPU")
-    device = 'cpu'
-
+  device = select_device()
 
   # ======= TENSORBOARD WRITER ========
   now = datetime.now()
@@ -263,12 +254,8 @@ def run(hp: HP, resume=False, save_snapshots=True):
   os.makedirs(snapshot_folder, exist_ok=True)
 
   if resume:
-    import re
-    # all model files for current hp. filenames are like `model_{epoch}.tar`, so take
-    epochs_files = [f for f in os.listdir(snapshot_folder) if re.match(r"^model_(\d+)\.tar$", f)]
-    # extract numerical epoch values from each epoch filename. Used to find most recent epoch
-    epochs = [int(f.replace('model_', '').replace('.tar', '')) for f in epochs_files]
-    
+    epochs = get_epochs_in_model_folder(snapshot_folder)
+        
     if len(epochs) > 0:
       recent_epoch = max(epochs)
       recent_model = f"model_{recent_epoch}.tar"
