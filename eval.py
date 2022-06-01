@@ -3,6 +3,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 import torch.nn.functional as F
 import os
+from datetime import datetime
 
 from datasets import RODDataset
 from utils import get_epochs_in_model_folder, select_device
@@ -14,7 +15,7 @@ BATCH_SIZE = 64
 LOADER_WORKERS = 8
 
 
-def eval(models_folder, every=1):
+def eval(models_folder, every=1, results_file=None, desc=""):
   device = select_device()
 
   # ======= DATA ========
@@ -60,7 +61,8 @@ def eval(models_folder, every=1):
       total += gt.size(0)
     
     accuracy = correct/total
-    print(f"RESUTLS: {accuracy*100:.1f}% ({correct}/{total})\n")
+
+    return accuracy, correct, total
 
 
   # ===== START EVALUATION =======
@@ -75,11 +77,24 @@ def eval(models_folder, every=1):
     # load model
     model_path = os.path.join(models_folder, f"model_{e}.tar")
     load_models(model_path)
-    eval_epoch(e)
+
+    accuracy, correct, total = eval_epoch(e)
+
+    print(f"RESUTLS: {accuracy*100:.1f}% ({correct}/{total})\n")
+
+    if results_file:
+      with open(results_file, 'a') as f:
+        now = datetime.now()
+        date = now.strftime('%b%d_%H-%M-%S')
+        f.write(f"{date}, {desc}, {e}, {accuracy:.4f}, {correct}, {total}\n")
+
 
 
 
 # ++++ START ++++
 if __name__ == '__main__':
-  test_folder = os.path.join("snapshots", HP().to_filename())
-  eval(test_folder)
+  hp_folder = HP().to_filename()
+  models_folder = os.path.join("snapshots", hp_folder)
+
+  os.makedirs("results", exist_ok=True)
+  eval(models_folder, results_file="results/log.csv", desc=hp_folder)
