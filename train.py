@@ -33,6 +33,12 @@ class HP:
     prs = [ f"{k}_{v}" for k, v in dataclasses.asdict(self).items() ]
     return "__".join(prs)
 
+  def load_from_args(self, args):
+    for f in dataclasses.fields(HP):
+      hp_arg = vars(args)[f.name]
+      if hp_arg is not None:
+        setattr(self, f.name, hp_arg)
+
 
 def setup_hp_arguments(parser):
   """
@@ -311,11 +317,8 @@ if __name__ == '__main__':
 
   # load hp from arguments
   hp = HP()
-
-  for f in dataclasses.fields(HP):
-    hp_arg = vars(args)[f.name]
-    if hp_arg is not None:
-      setattr(hp, f.name, hp_arg)
+  hp.load_from_args(args)
 
   # run the script
-  run(hp, resume=(not args.no_resume))
+  resume = not args.no_resume
+  run(hp, resume=resume)
