@@ -3,6 +3,7 @@ from torch.utils.data import Dataset
 from PIL import Image
 from torchvision.transforms import ToTensor
 from utils import download_file, extract_tar
+import torchvision.transforms.functional as TF
 
 DATASETS_URL = 'https://www.dropbox.com/s/xdy5cfu7m63pk46/?dl=1'
 DATASETS_NAME = 'ROD-synROD'
@@ -25,6 +26,17 @@ def ensure_download(root):
     extract_tar(tar_filename, root)
 
 
+class MyTransform:
+  def __init__(self, image_size=224):
+    self.image_size = image_size
+
+  def __call__(self, img):
+    s = (self.image_size, self.image_size)
+    img = img.resize(s)
+    img = TF.to_tensor(img)
+    img = TF.normalize(img, [0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+    return img
+
 
 class BaseDataset(Dataset):
   """
@@ -36,7 +48,7 @@ class BaseDataset(Dataset):
       - for rgb: rgb-washington/rubber_eraser/rubber_eraser_4/rubber_eraser_4_1_136_crop.png
       - for depth: surfnorm-washington/rubber_eraser/rubber_eraser_4/rubber_eraser_4_1_136_depthcrop.png
   """
-  def __init__(self, subfolder, annotations_filename, root, download=False, image_size=None, transform=ToTensor()):
+  def __init__(self, subfolder, annotations_filename, root, download=False, image_size=None, transform=MyTransform()):
     self.root = root
     self.download = download
     self.image_size = image_size
@@ -52,8 +64,10 @@ class BaseDataset(Dataset):
       self.annotations = [l.split(' ') for l in f.readlines()]
       self.annotations = [(p, int(l)) for p, l in self.annotations]
 
+
   def __len__(self):
     return len(self.annotations)
+
 
   def __getitem__(self, idx):
     img_path, label = self.annotations[idx]
@@ -61,19 +75,15 @@ class BaseDataset(Dataset):
     rgb_image_path = path.join(self.images_folder, self._map_image_path(img_path, is_rgb=True))
     d_image_path = path.join(self.images_folder, self._map_image_path(img_path, is_rgb=False))
 
-    rgb_image = Image.open(rgb_image_path)
-    d_image = Image.open(d_image_path)
+    rgb_image = Image.open(rgb_image_path).convert('RGB')
+    d_image = Image.open(d_image_path).convert('RGB')
 
-    if self.image_size:
-      s = (self.image_size, self.image_size)
-      rgb_image = rgb_image.resize(s)
-      d_image = d_image.resize(s)
-    
     if self.transform:
       rgb_image = self.transform(rgb_image)
       d_image = self.transform(d_image)
 
     return rgb_image, d_image, label
+
 
   def _map_image_path(self, path, is_rgb):
     pass

@@ -55,6 +55,7 @@ class RecognitionClassifier(nn.Module):
       nn.Linear(in_channels, 1000),
       nn.BatchNorm1d(1000),
       nn.ReLU(),
+      nn.Dropout(p=0.5)
     )
     
     self.fc2 = nn.Linear(in_features=1000, out_features=out_classes)
@@ -95,7 +96,8 @@ class RotationClassifier(nn.Module):
       nn.Flatten(),
       nn.Linear(3*3*hidden_size, hidden_size),
       nn.BatchNorm1d(hidden_size, affine=True),
-      nn.ReLU()
+      nn.ReLU(),
+      nn.Dropout(p=0.5)
     )
 
     self.fc2 = nn.Linear(hidden_size, out_classes)

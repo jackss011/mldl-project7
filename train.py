@@ -10,24 +10,25 @@ from dataclasses import dataclass
 
 from datasets import PretextSynRODDataset, PretextRODDataset, RODDataset, SynRODDataset
 from networks import FeatureExtractor, RecognitionClassifier, RotationClassifier, weight_init
-from utils import LoaderIterator, get_epochs_in_model_folder, select_device, show_image
+from utils import LoaderIterator, ent_loss, get_epochs_in_model_folder, select_device, show_image
 
 from torch.utils.tensorboard import SummaryWriter
 
 
-TRAIN_WORKERS = 2   # workers used for loading training data (for each dataset)
+TRAIN_WORKERS = 1   # workers used for loading training data (for each dataset)
 EVAL_WORKERS = 4    # workers used for loading evaluation data (for each dataset)
 
 
 # HYPERPARAMS
 @dataclass
 class HP:
-  epochs: int = 2
-  batch_size: int = 64*2
+  epochs: int = 10
+  batch_size: int = 64
   lr: float = 3e-4
   momentum: float = 0.9
-  weight_decay: float = 0
+  weight_decay: float = 0.1
   pretext_weight: float = 1
+  ent_weight: float = 0.1
 
   def to_filename(self):
     prs = [ f"{k}_{v}" for k, v in dataclasses.asdict(self).items() ]
@@ -51,6 +52,7 @@ def setup_hp_arguments(parser):
   parser.add_argument("--momentum", type=float, help="Momentum for SGD")
   parser.add_argument("--weight-decay", type=float, help="Weight decay for SGD")
   parser.add_argument("-pw", "--pretext-weight", type=float, help="Pretext task loss weight")
+  parser.add_argument("-ew", "--ent-weight", type=float, help="ENT loss weight")
 
 
 # ==== RUN TRAINING ====
@@ -73,10 +75,12 @@ def run(hp: HP, resume=False, save_snapshots=True):
   ds_train_source = SynRODDataset("data", train=True, image_size=224)             # Source labelled
   ds_train_source_pt = PretextSynRODDataset("data", train=True, image_size=224)   # Source pretext
   ds_train_target_pt = PretextRODDataset("data", train=True, image_size=224)      # Target pretext
+  ds_train_target = RODDataset("data", train=True, image_size=224)
 
   ds_eval_source = SynRODDataset("data", train=False, image_size=224)             # Test if can classify source
   ds_eval_source_pt = PretextSynRODDataset("data", train=False, image_size=224)   # Test if can predict rotation of source images
-  ds_eval_target_pt = PretextRODDataset("data", train=True, image_size=224)       # Test if can predict rotation of target images
+  ds_eval_target_pt = PretextRODDataset("data", train=False, image_size=224)       # Test if can predict rotation of target images
+  ds_eval_target = RODDataset("data", train=False, image_size=224)
 
 
   # ======= DATALOADERS ========
@@ -86,11 +90,12 @@ def run(hp: HP, resume=False, save_snapshots=True):
   dl_train_source = dataloader_factory(ds_train_source)
   dl_train_source_pt = dataloader_factory(ds_train_source_pt)
   dl_train_target_pt = dataloader_factory(ds_train_target_pt)
+  dl_train_target = dataloader_factory(ds_train_target)
 
   dl_eval_source = dataloader_factory(ds_eval_source, num_workers=EVAL_WORKERS)
   dl_eval_source_pt = dataloader_factory(ds_eval_source_pt, num_workers=EVAL_WORKERS)
   dl_eval_target_pt = dataloader_factory(ds_eval_target_pt, num_workers=EVAL_WORKERS)
-
+  dl_eval_target = dataloader_factory(ds_eval_target, num_workers=EVAL_WORKERS)
 
   # ======= MODELS ========
   model_rgb = FeatureExtractor().to(device)
@@ -99,7 +104,7 @@ def run(hp: HP, resume=False, save_snapshots=True):
   def combine_modes(rgb, d) -> torch.Tensor:
     return torch.cat((model_rgb(rgb), model_d(d)), dim=1)
 
-  model_task = RecognitionClassifier(512*2, 51).to(device)
+  model_task = RecognitionClassifier(512*2, 47).to(device)
   model_pretext = RotationClassifier(512*2, 4).to(device)
 
   model_task.apply(weight_init)
@@ -184,6 +189,7 @@ def run(hp: HP, resume=False, save_snapshots=True):
     iter_source = LoaderIterator(dl_train_source, skip_last=True)
     iter_source_pt = LoaderIterator(dl_train_source_pt, skip_last=True)
     iter_target_pt = LoaderIterator(dl_train_target_pt, infinite=True, skip_last=True)
+    iter_target = LoaderIterator(dl_train_target, infinite=True, skip_last=True)
 
     # ITERATIONS
     for source_batch in tqdm(iter_source):      
@@ -191,7 +197,28 @@ def run(hp: HP, resume=False, save_snapshots=True):
         o.zero_grad()
 
       # recognition on source
-      train_model(model_task, source_batch)
+      rgb, d, gt = source_batch
+      rgb, d, gt = rgb.to(device), d.to(device), gt.to(device)
+      f = combine_modes(rgb, d)
+      logits = model_task(f)
+      loss_rec = criterion(logits, gt)
+
+      loss_ent = 0
+
+      # ent loss
+      if hp.ent_weight > 0.:
+        rgb, d, gt = next(iter_target)
+        rgb, d, gt = rgb.to(device), d.to(device), gt.to(device)
+
+        f = combine_modes(rgb, d)
+        logits = model_task(f)
+        loss_ent = ent_loss(logits)
+      else:
+        loss_ent = 0
+
+      loss = loss_rec + hp.ent_weight * loss_ent
+      loss.backward()
+      # del rgb, d, loss
 
       if hp.pretext_weight > 0:
         # rotation on source
@@ -263,6 +290,8 @@ def run(hp: HP, resume=False, save_snapshots=True):
       eval_model(model_pretext, dl_eval_target_pt, step=n, desc="TARGET: ROTATION", tag="target_rot", limit_samples=8000, )
     else:
       print("Skipping evaluation for pretext task since pretext_weight is 0...\n")
+
+    eval_model(model_task, dl_eval_target, step=n, desc="TARGET: CLASSIFICATION", tag="target_recog", limit_samples=8000)
 
 
   # ===================================

@@ -1,5 +1,6 @@
 import os
 from tenacity import retry
+import torch.nn.functional as F
 import torchvision.transforms.functional as TF
 import torch
 
@@ -130,4 +131,12 @@ def get_epochs_in_model_folder(dir):
   # extract numerical epoch values from each epoch filename. Used to find most recent epoch
   epochs = [int(f.replace('model_', '').replace('.tar', '')) for f in epochs_files]
   
-  return tuple(epochs)
+  return sorted(tuple(epochs))
+
+
+def ent_loss(logits):
+  p_softmax = F.softmax(logits, dim=1)
+  mask = p_softmax.ge(0.000001)  # greater or equal to
+  mask_out = torch.masked_select(p_softmax, mask)
+  entropy = -(torch.sum(mask_out * torch.log(mask_out)))
+  return entropy / float(p_softmax.size(0))

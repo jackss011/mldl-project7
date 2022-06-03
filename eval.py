@@ -1,3 +1,4 @@
+from time import time
 import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
@@ -15,7 +16,7 @@ BATCH_SIZE = 64
 LOADER_WORKERS = 8
 
 
-def eval(models_folder, every=1, results_file=None, desc="", hp=None):
+def eval(models_folder, every=1, results_file=None, desc="", hp=None, timestamp=""):
   device = select_device()
 
   # ======= DATA ========
@@ -85,15 +86,15 @@ def eval(models_folder, every=1, results_file=None, desc="", hp=None):
 
     if results_file:
       with open(results_file, 'a') as f:
-        now = datetime.now()
-        date = now.strftime('%b%d_%H-%M-%S')
-        f.write(f"{date}, {desc}, {e}, {accuracy:.4f}, {correct}, {total}\n")
+        f.write(f"{timestamp}, {desc}, {e}, {accuracy:.4f}, {correct}, {total}\n")
 
 
 
 
 # ++++ START ++++
 if __name__ == '__main__':
+  timestamp = datetime.now().strftime('%b%d_%H-%M-%S')
+
   import argparse
   parser = argparse.ArgumentParser()
   setup_hp_arguments(parser)
@@ -106,4 +107,4 @@ if __name__ == '__main__':
   models_folder = os.path.join("snapshots", hp_folder)
 
   os.makedirs("results", exist_ok=True)
-  eval(models_folder, hp=hp, results_file="results/log.csv", desc=hp_folder)
+  eval(models_folder, hp=hp, results_file="results/log.csv", desc=hp_folder, timestamp=timestamp)
