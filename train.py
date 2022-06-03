@@ -40,6 +40,8 @@ def run(hp: HP, resume=False, save_snapshots=True):
   """
   device = select_device()
 
+  print(f"\n+++ HPs:", hp, '\n')
+
   # ======= TENSORBOARD WRITER ========
   now = datetime.now()
   summary = SummaryWriter(log_dir=f"runs/{hp.to_filename()}/{now.strftime('%b%d_%H-%M-%S')}")
@@ -285,5 +287,27 @@ def run(hp: HP, resume=False, save_snapshots=True):
 
 # run with basic hp for now
 if __name__ == '__main__':
+  import argparse
+  parser = argparse.ArgumentParser()
+
+  parser.add_argument("--epochs", type=int, help="Number of epochs of training")
+  parser.add_argument("--batch-size", type=int, help="Batch size")
+  parser.add_argument("--lr", type=float, help="Learning rate")
+  parser.add_argument("--momentum", type=float, help="Momentum")
+  parser.add_argument("--weight-decay", type=float, help="Weight decay")
+  parser.add_argument("-pw", "--pretext-weight", type=float, help="Pretext task loss weight")
+
+  parser.add_argument("--no-resume", action="store_true", help="Do not resume training")
+
+  args = parser.parse_args()
+
+  # load hp from arguments
   hp = HP()
-  run(hp, resume=True)
+
+  for f in dataclasses.fields(HP):
+    hp_arg = vars(args)[f.name]
+    if hp_arg is not None:
+      setattr(hp, f.name, hp_arg)
+
+  # run the script
+  run(hp, resume=(not args.no_resume))
