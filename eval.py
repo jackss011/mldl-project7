@@ -8,14 +8,14 @@ from datetime import datetime
 from datasets import RODDataset
 from utils import get_epochs_in_model_folder, select_device
 import networks as n
-from train import HP
+from train import HP, setup_hp_arguments
 
 
 BATCH_SIZE = 64
 LOADER_WORKERS = 8
 
 
-def eval(models_folder, every=1, results_file=None, desc=""):
+def eval(models_folder, every=1, results_file=None, desc="", hp=None):
   device = select_device()
 
   # ======= DATA ========
@@ -66,12 +66,13 @@ def eval(models_folder, every=1, results_file=None, desc=""):
 
 
   # ===== START EVALUATION =======
-  print(f"\n====> EVALUATING: {models_folder}")
+  print(f"\n====> EVALUATING: {hp}")
+  print("\n-- Snapshots folder:", models_folder)
 
   epochs = get_epochs_in_model_folder(models_folder)
   selected_epochs = list(reversed(epochs))[slice(0, len(epochs), every)]
 
-  print(f"Evaluating every {every} epochs:", selected_epochs, '\n')
+  print(f"\n++ Evaluating every {every} epochs:", selected_epochs, '\n')
 
   for e in selected_epochs:
     # load model
@@ -93,8 +94,16 @@ def eval(models_folder, every=1, results_file=None, desc=""):
 
 # ++++ START ++++
 if __name__ == '__main__':
-  hp_folder = HP().to_filename()
+  import argparse
+  parser = argparse.ArgumentParser()
+  setup_hp_arguments(parser)
+  args = parser.parse_args()
+
+  hp = HP()
+  hp.load_from_args(args)
+
+  hp_folder = hp.to_filename()
   models_folder = os.path.join("snapshots", hp_folder)
 
   os.makedirs("results", exist_ok=True)
-  eval(models_folder, results_file="results/log.csv", desc=hp_folder)
+  eval(models_folder, hp=hp, results_file="results/log.csv", desc=hp_folder)
