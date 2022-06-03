@@ -34,13 +34,28 @@ class HP:
     return "__".join(prs)
 
 
+def setup_hp_arguments(parser):
+  """
+    Add hyperparameters to argparse so that they can be change via cmd.
+    Example: `python train.py --lr 0.003` will override the default learning rate
+  """
+  parser.add_argument("--epochs", type=int, help="Number of epochs of training")
+  parser.add_argument("--batch-size", type=int, help="Batch size")
+  parser.add_argument("--lr", type=float, help="Learning rate for SGD")
+  parser.add_argument("--momentum", type=float, help="Momentum for SGD")
+  parser.add_argument("--weight-decay", type=float, help="Weight decay for SGD")
+  parser.add_argument("-pw", "--pretext-weight", type=float, help="Pretext task loss weight")
+
+
+# ==== RUN TRAINING ====
 def run(hp: HP, resume=False, save_snapshots=True):
   """
-    Performs a full run with the specified hyperparameters
+    Performs a full training run with the specified hyperparameters.
+    If resume is true tries to find the most recent snapshot with the same hps
   """
   device = select_device()
 
-  print(f"\n+++ HPs:", hp, '\n')
+  print(f"\n+++ HPs:", hp)
 
   # ======= TENSORBOARD WRITER ========
   now = datetime.now()
@@ -285,20 +300,13 @@ def run(hp: HP, resume=False, save_snapshots=True):
 
 
 
-# run with basic hp for now
+# ====== FILE ENTRY POINT ======
 if __name__ == '__main__':
   import argparse
   parser = argparse.ArgumentParser()
-
-  parser.add_argument("--epochs", type=int, help="Number of epochs of training")
-  parser.add_argument("--batch-size", type=int, help="Batch size")
-  parser.add_argument("--lr", type=float, help="Learning rate")
-  parser.add_argument("--momentum", type=float, help="Momentum")
-  parser.add_argument("--weight-decay", type=float, help="Weight decay")
-  parser.add_argument("-pw", "--pretext-weight", type=float, help="Pretext task loss weight")
-
-  parser.add_argument("--no-resume", action="store_true", help="Do not resume training")
-
+  
+  setup_hp_arguments(parser)
+  parser.add_argument("--no-resume", action="store_true", help="Do not resume training. Start from epoch 1")
   args = parser.parse_args()
 
   # load hp from arguments
