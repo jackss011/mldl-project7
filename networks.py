@@ -8,13 +8,24 @@ def weight_init(m):
   """
     Used as argument in model.apply to initialize Linear and Conv2d layers weights.
   """
-  if isinstance(m, nn.Linear):
-    nn.init.xavier_uniform_(m.weight)
-    nn.init.constant_(m.bias, 0.01)
+  # if isinstance(m, nn.Linear):
+  #   nn.init.xavier_uniform_(m.weight)
+  #   nn.init.constant_(m.bias, 0.01)
 
-  elif isinstance(m, nn.Conv2d):
-    nn.init.xavier_uniform_(m.weight)
-    nn.init.zeros_(m.bias)
+  # elif isinstance(m, nn.Conv2d):
+  #   nn.init.xavier_uniform_(m.weight)
+  #   nn.init.zeros_(m.bias)
+
+  classname = m.__class__.__name__
+  if classname.find('Conv2d') != -1:
+      torch.nn.init.xavier_uniform_(m.weight)
+      torch.nn.init.zeros_(m.bias)
+  elif classname.find('BatchNorm') != -1:
+      m.weight.data.normal_(1.0, 0.01)
+      m.bias.data.fill_(0)
+  elif classname.find('Linear') != -1:
+      m.weight.data.normal_(0.0, 0.01)
+      m.bias.data.normal_(0.0, 0.01)
 
 
 class FeatureExtractor(nn.Module):

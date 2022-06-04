@@ -24,9 +24,9 @@ EVAL_WORKERS = 4    # workers used for loading evaluation data (for each dataset
 class HP:
   epochs: int = 10
   batch_size: int = 64
-  lr: float = 3e-4
+  lr: float = 1e-4
   momentum: float = 0.9
-  weight_decay: float = 0.1
+  weight_decay: float = 0.05
   pretext_weight: float = 1
   ent_weight: float = 0.1
 
@@ -190,7 +190,7 @@ def run(hp: HP, resume=False, save_snapshots=True):
     iter_source_pt = LoaderIterator(dl_train_source_pt, skip_last=True)
     iter_target_pt = LoaderIterator(dl_train_target_pt, infinite=True, skip_last=True)
     iter_target = LoaderIterator(dl_train_target, infinite=True, skip_last=True)
-
+    vs = [0, 0, 0, 0]
     # ITERATIONS
     for source_batch in tqdm(iter_source):      
       for o in opt_list: # zero all gradients
@@ -220,7 +220,9 @@ def run(hp: HP, resume=False, save_snapshots=True):
       loss.backward()
       # del rgb, d, loss
 
-      if hp.pretext_weight > 0:
+      
+
+      if hp.pretext_weight > 0.:
         # rotation on source
         source_batch_pt = next(iter_source_pt)
         train_model(model_pretext, source_batch_pt, hp.pretext_weight)
@@ -229,8 +231,13 @@ def run(hp: HP, resume=False, save_snapshots=True):
         target_batch_pt = next(iter_target_pt)
         train_model(model_pretext, target_batch_pt, hp.pretext_weight)
 
+        for l in target_batch_pt[2]:
+          vs[l] += 1
+
       for o in opt_list: #update weights
         o.step()
+
+    print(vs)
 
 
   # ========== EVALUATION ==============
